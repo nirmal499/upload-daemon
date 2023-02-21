@@ -7,7 +7,12 @@
 
 using namespace nlohmann::literals;
 
-std::string RQH::RequestCls::upload_file(std::string zip_file_to_upload)
+/**
+ * Returns the location header value, takes the name of zip file
+ * It can return empty string. Make sure to check the returned value from this function
+ * it throws if zip file not found.
+*/
+std::string RQH::RequestCls::get_location_header_value(std::string zip_file_to_upload)
 {
   if (std::filesystem::is_regular_file(_directory_path.string() + "/" + zip_file_to_upload))
   {
@@ -58,9 +63,7 @@ std::string RQH::RequestCls::upload_file(std::string zip_file_to_upload)
         if (response_body["error"]["message"] == "Invalid Credentials")
         {
           // access token is expired
-
           renew_access_token(); // access token is renewed here
-
         }
       }
     }
@@ -69,7 +72,54 @@ std::string RQH::RequestCls::upload_file(std::string zip_file_to_upload)
   }
   else
   {
+    std::cout << zip_file_to_upload << "\n";
+    std::cout << _directory_path.string() + "/" + zip_file_to_upload << "\n";
     throw std::runtime_error("zip file path provided does not exists");
+  }
+}
+
+/***
+ * Takes the SESSION_URL and the zip file.
+ * It throws if the upload does not returns 200.
+ * It returns the ID present in the response json
+*/
+std::string RQH::RequestCls::upload_file(std::string upload_session_url,std::string zip_file_name)
+{
+  // std::ifstream infile(_directory_path.string()+zip_file_name,std::ios::binary);
+  // infile.seekg(0,std::ios::end);
+  // long long file_size = infile.tellg(); // no.of bytes
+
+  std::string zip_file_path = _directory_path.string() +"/" +zip_file_name;
+  
+  auto file_size = std::filesystem::file_size(zip_file_path);
+  std::ifstream infile(zip_file_path,std::ios::binary);
+  std::vector<char> buffer(file_size);
+  infile.read(buffer.data(),buffer.size());
+
+  // Making sure that upload_session_url is not empty string
+
+  cpr::Response r = cpr::Put(cpr::Url{upload_session_url},
+                             cpr::Body{cpr::Buffer{buffer.begin(),buffer.end(),zip_file_name}},
+                             cpr::Header{{"Content-Length", std::to_string(file_size)}}
+                        );
+
+  // cpr::Response r = cpr::Put(
+  //                     cpr::Url{upload_session_url},
+  //                     cpr::Multipart{{"file", cpr::File{zip_file_path,zip_file_name}}},
+  //                     // cpr::Header{{"mimeType", "application/zip"}},
+  //                     cpr::Header{{"Content-Length", std::to_string(file_size)}}
+  //                   );
+  
+  std::cout << nlohmann::json::parse(r.text).dump() << "\n";
+  if(r.status_code == 200){
+    nlohmann::json response_body = nlohmann::json::parse(r.text);
+
+    std::string returned_id = response_body["id"];
+
+    unlink(zip_file_path.c_str()); // Delete the zip file since it is uploaded
+    return returned_id;
+  }else{
+    throw std::runtime_error("zip file is not able to be uploaded.");
   }
 }
 
@@ -93,6 +143,7 @@ void RQH::RequestCls::renew_access_token()
     nlohmann::json response_body = nlohmann::json::parse(r.text);
 
     _access_token = response_body["access_token"];
+    std::cout << "NEW ACCESS_TOKEN : " << _access_token << "\n";
   }
   else
   {
@@ -147,7 +198,8 @@ std::string RQH::RequestCls::zipAndRemove(std::vector<std::string> file_list_vec
   }
 
   std::string time_str = std::string(std::ctime(&now_time));
-  std::string to_upload_new_name_path = _directory_path.string() + "/to_upload_" + time_str.erase(time_str.length() - 1);
+  std::string zip_file_name = "to_upload_" + time_str.erase(time_str.length() - 1);
+  std::string to_upload_new_name_path = _directory_path.string() + "/" + zip_file_name;
 
   std::string zip_cmd = "zip '" + to_upload_new_name_path + ".zip' " + zip_parameters + " > /dev/null 2>&1";
 
@@ -161,5 +213,11 @@ std::string RQH::RequestCls::zipAndRemove(std::vector<std::string> file_list_vec
   }
 
   // zip has been made successfully
-  return "'" + to_upload_new_name_path + ".zip'";
+  // return "'" + zip_file_name + ".zip'";
+
+  for(auto &p: file_list_vec){
+    unlink(p.c_str());
+  }
+
+  return zip_file_name + ".zip";
 }

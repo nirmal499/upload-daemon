@@ -42,7 +42,8 @@ namespace RQH{
 
             }
 
-      std::string upload_file(std::string);
+      std::string get_location_header_value(std::string);
+      std::string upload_file(std::string,std::string);
 
       std::vector<std::string> checkIfDirectoryHasJPG();
       std::string zipAndRemove(std::vector<std::string>);
