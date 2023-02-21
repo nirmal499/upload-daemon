@@ -1,0 +1,5 @@
+.vscode
+build
+**/details.txt
+**/web_flow.txt
+external
